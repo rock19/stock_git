@@ -23,35 +23,54 @@ def dataProcess(stock,today,yesterday,days) -> (np.array, np.array):
     return
 
 def check_T(code,today):
-    df=readdata(code,today,300)
+    df=readdata(code,today,100)
     rows_list=[]
     row = 0
+
     for rowdata in df.iterrows():
         open_price = rowdata[1]['open']
         close_price = rowdata[1]['close']
         high_price = rowdata[1]['high']
         low_price = rowdata[1]['low']
-        if (close_price - open_price) >= 0:
-            top_price = close_price
-            botton_price = open_price
-        else:
-            top_price = open_price
-            botton_price = close_price
-        cylinder = top_price - botton_price  # 实体大小
-        if (cylinder / close_price < 0.02) and ((high_price - top_price) < cylinder):
-            if botton_price - low_price > 4 * cylinder:
-                T_sharp = True
-                end_date = rowdata[1]["date"].strftime('%Y-%m-%d')+" 15:00:00"
-                df_T = readdata(code,datetime.datetime.strptime(end_date, "%Y-%m-%d %H:%M:%S"),15)
-                strs = rowdata[1]["date"].strftime('%Y-%m-%d') + ",low_price=" + str(low_price) + ",high_price" + str(high_price) + ",top_price" \
-                       + str(top_price) + ",botton_price" + str(botton_price)
-                print(strs)
-                rows_dict = {}
-                rows_dict.update(rowdata[1])
-                rows_list.append(rows_dict)
-                draw_k(df_T, rows_list)
+        volume = rowdata[1]['volume']
+        T_sharp = check_t_jq(open_price,close_price,high_price,low_price,volume)
+
+        end_date = rowdata[1]["date"].strftime('%Y-%m-%d') + " 15:00:00"
+        df_T = readdata(code, datetime.datetime.strptime(end_date, "%Y-%m-%d %H:%M:%S"), 30)
+        mean_volume = df_T['volume'][1:7].mean()
+          # 实体大小
+        rows_dict = {}
+        if  T_sharp and df_T['open'][29] < df_T['close'][28] and mean_volume*1.3 < volume:
+
+            # strs = rowdata[1]["date"].strftime('%Y-%m-%d') + ",low_price=" + str(low_price) + ",high_price" + str(high_price) + ",top_price" \
+            #        + str(top_price) + ",botton_price" + str(botton_price)
+            # print(strs)
+            rows_dict.update(rowdata[1])
+            rows_list.append(rows_dict)
+    draw_k(df, rows_list)
     #draw_k(df, rows_list)
     return
+
+def check_t_jq(open,close,high,low,volume):
+    if (close - open) >= 0:   #定义柱体的上边界和下边界
+        top = close
+        botton = open
+    else:
+        top = open
+        botton = close
+    cylinder_ = close * 0.01 #预设实体大小
+    cylinder = top - botton #实际实体大小
+    radio_low = 2*cylinder #下线4倍实体大小
+    radio_cylinder= 0.02
+
+    if (cylinder < cylinder_) and (cylinder > cylinder_*0.3) and ((high - top) < cylinder_):
+        if botton - low > radio_low:
+            return True #找到
+    return False
+
+def get_maList(df:pd.DataFrame,n:int):
+    mean = df[:n]['close'].mean()
+    return mean
 
 def draw_k(df:pd.DataFrame,mark):
     #df['date'] = str(df['date']).apply(lambda x: datetime.strptime(x, '%Y%m%d'))
@@ -71,7 +90,7 @@ def draw_k(df:pd.DataFrame,mark):
         for row in  df.iterrows():
             flag = False
             for s in mark:
-                if row[1]["date"].strftime('%Y-%m-%d')=='2019-12-19':
+                if row[1]["date"].strftime('%Y-%m-%d')=='2020-10-15':
                     a=1
                 if s["date"].strftime('%Y-%m-%d') == row[1]["date"].strftime('%Y-%m-%d'):
                     flag = True
@@ -84,14 +103,16 @@ def draw_k(df:pd.DataFrame,mark):
                 mark_df=mark_df.append(new)
 
         add_plot = [
-            mpf.make_addplot(mark_df, scatter=True, markersize=200, marker='^', color='r')
+            mpf.make_addplot(mark_df, scatter=True, markersize=50, marker='^', color='r')
             ]
         # mpf.plot(data, addplot=add_plot, type='candle', volume=True, mav=(7, 13, 26), show_nontrading=True,
         #           figratio=(20, 10))
-        mpf.plot(data, type='candle', addplot=add_plot, volume=True)
+        # ('candle', 'candlestick', 'ohlc', 'ohlc_bars',
+        #  'line', 'renko', 'pnf')
+        mpf.plot(data, type='candle', addplot=add_plot, volume=True )
     else:
         mpf.plot(data, type='candle', volume=True, mav=(7, 13, 26), show_nontrading=True,
-                 datetime_format='%Y-%m-%d', figratio=(20, 10))
+                 datetime_format='%Y-%m-%d', figratio=(50, 30))
 
     # add_plot = [
     #     mpf.make_addplot(b_list, scatter=True, markersize=200, marker='^', color='y'),
