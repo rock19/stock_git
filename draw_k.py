@@ -5,10 +5,12 @@ import mplfinance as mpf
 import numpy as np
 import datetime
 
+def getAuthJQ():
+    jq.auth('13501253295', 'inside')
 
 def readdata(code,enddate,days:int):
     df=pd.DataFrame()
-    jq.auth('13501253295', 'inside')
+    getAuthJQ()
     df=jq.get_bars(code, days, unit='1d',
              fields=['date', 'open', 'high', 'low', 'close','volume'],
              end_dt=enddate, df=True,include_now=True)
@@ -16,30 +18,38 @@ def readdata(code,enddate,days:int):
     #print(df)
     return df
 
-def dataProcess(stock,today,yesterday,days) -> (np.array, np.array):
-    todaybar = readdata(stock,today,1)
-    historybar = readdata(stock,yesterday,days)
+def getAllStocks():
+    getAuthJQ()
+    df = jq.get_all_securities(['stock']).index
+    return df
 
-    return
+def dataProcess(today,days) -> (np.array, np.array):
+   stocks = getAllStocks()
+   for stock in stocks:
+       print(stock)
+       check_stock(stock,today,days)
+   return
 
-def check_T(code,today):
-    df=readdata(code,today,100)
+def check_stock(code,today,days=100):
+    df=readdata(code,today,days)
     rows_list=[]
     row = 0
-
     for rowdata in df.iterrows():
         open_price = rowdata[1]['open']
         close_price = rowdata[1]['close']
         high_price = rowdata[1]['high']
         low_price = rowdata[1]['low']
         volume = rowdata[1]['volume']
-        T_sharp = check_t_jq(open_price,close_price,high_price,low_price,volume)
-
         end_date = rowdata[1]["date"].strftime('%Y-%m-%d') + " 15:00:00"
         df_T = readdata(code, datetime.datetime.strptime(end_date, "%Y-%m-%d %H:%M:%S"), 30)
+        open_yesterday = df_T['close'][28]
+        close_yesterday = df_T['open'][28]
+        volume_yesterday = df_T['volume'][28]
+        T_sharp = check_t_jq(open_price, close_price, high_price, low_price, volume,open_yesterday,close_yesterday,volume_yesterday)
         mean_volume = df_T['volume'][1:7].mean()
-          # 实体大小
+        # 实体大小
         rows_dict = {}
+
         if  T_sharp and df_T['open'][29] < df_T['close'][28] and mean_volume*1.3 < volume:
 
             # strs = rowdata[1]["date"].strftime('%Y-%m-%d') + ",low_price=" + str(low_price) + ",high_price" + str(high_price) + ",top_price" \
@@ -47,25 +57,33 @@ def check_T(code,today):
             # print(strs)
             rows_dict.update(rowdata[1])
             rows_list.append(rows_dict)
-    draw_k(df, rows_list)
+    if len(rows_list) != 0 :
+        draw_k(df, rows_list)
     #draw_k(df, rows_list)
     return
 
-def check_t_jq(open,close,high,low,volume):
+def check_t_jq(open,close,high,low,volume,open_yesterday,close_yesterday,volume_yesterday):
     if (close - open) >= 0:   #定义柱体的上边界和下边界
         top = close
         botton = open
     else:
         top = open
         botton = close
-    cylinder_ = close * 0.01 #预设实体大小
+    if (close_yesterday-open_yesterday)>=0:
+        top_yesterday = close_yesterday
+        botton_yesterday = open_yesterday
+    else :
+        top_yesterday = close_yesterday
+        botton_yesterday = open_yesterday
+    cylinder_ = close * 0.02 #预设实体大小
     cylinder = top - botton #实际实体大小
     radio_low = 2*cylinder #下线4倍实体大小
     radio_cylinder= 0.02
 
-    if (cylinder < cylinder_) and (cylinder > cylinder_*0.3) and ((high - top) < cylinder_):
-        if botton - low > radio_low:
-            return True #找到
+    if (cylinder < cylinder_) and (cylinder > cylinder_*0.3) and ((high - top) < cylinder_*0.2): #上影线不超过预设实体大小的20%
+        if botton - low > radio_low :
+            if botton_yesterday > open and volume > volume_yesterday: #今日低开且成交量放大
+                return True #找到
     return False
 
 def get_maList(df:pd.DataFrame,n:int):
@@ -119,10 +137,11 @@ def draw_k(df:pd.DataFrame,mark):
     #     mpf.make_addplot(s_list, scatter=True, markersize=200, marker='v', color='r'),
     #     mpf.make_addplot(data[['UpperB', 'LowerB']])]
 
-
+getAuthJQ
 code = '000876.XSHE'
 today='2021-01-29 15:00:00'
-df = check_T(code,today)
+#df = check_stock(code,today)
+dataProcess(today,100)
 #draw_k(df)
 # df = df.rename(columns={"vol": "volume"})
 # df.set_index('date', inplace=True)
