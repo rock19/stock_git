@@ -4,59 +4,91 @@ from matplotlib import pyplot as plt
 import mplfinance as mpf
 import numpy as np
 import datetime
+from MysqlHelper import MysqlHelper as MySQL
+from time import sleep
+from tqdm import tqdm
 
 def getAuthJQ():
     jq.auth('13501253295', 'inside')
 
-def readdata(code,enddate,days:int):
-    df=pd.DataFrame()
-    getAuthJQ()
-    df=jq.get_bars(code, days, unit='1d',
-             fields=['date', 'open', 'high', 'low', 'close','volume'],
-             end_dt=enddate, df=True,include_now=True)
+def readdata(code,today,days:int):
+    s = datetime.datetime.strptime(today, '%Y-%m-%d').date() - datetime.timedelta(days=days)
+    endday = s.strftime("%Y-%m-%d")
+    stockSQL = "SELECT code,date_format(date, '%Y-%m-%d') as date,open,high,low,close,volume FROM mystock.stock_bars_memory " \
+               "where date between '" + endday + "' and '" + today + "' and code ='" + code + "'"
+    # print(stockSQL)
+    mysql = MySQL()
+    mysql.connect()
+    cnt, rows = mysql.select_sql(stockSQL, None)
+    columns = {'code': 1, 'date': 2, 'open': 3, 'high': 4, 'low': 5, 'close': 6, 'volume': 7}
+    df = pd.DataFrame(rows, columns=columns)
     df = df.sort_values('date')
     #print(df)
     return df
 
 def getAllStocks():
-    getAuthJQ()
-    df = jq.get_all_securities(['stock']).index
+    #getAuthJQ()
+    codesql = "select distinct code from mystock.stock_bars_memory;"
+    mysql = MySQL()
+    mysql.connect()
+    cnt, rows = mysql.select_sql(codesql, None)
+    columns = {'code'}
+    df = pd.DataFrame(rows, columns=columns)
+    #df = jq.get_all_securities(['stock']).index
     return df
 
-def dataProcess(today,days) -> (np.array, np.array):
+def dataProcess(today:str,days:int) -> (np.array, np.array):
    stocks = getAllStocks()
-   for stock in stocks:
-       print(stock)
+   pbar = tqdm(total=len(stocks), ncols=100, unit='B')
+   cnt = 0
+   for stock in stocks["code"]:
+       #print(stock)
        check_stock(stock,today,days)
+       cnt += 1
+       pbar.set_description('Processing:' + str(cnt) + ",code = " + stock)
+       pbar.update(1)
    return
 
-def check_stock(code,today,days=100):
-    df=readdata(code,today,days)
+def check_stock(codestr:str,today:str,days:int):
+    #s = datetime.datetime.strptime(today,'%Y-%m-%d').date() - datetime.timedelta(days = days)
+    s = datetime.datetime.strptime(today,'%Y-%m-%d').date() - datetime.timedelta(days = days)
+    endday = s.strftime("%Y-%m-%d")
+    stockSQL = "SELECT code,date_format(date, '%Y-%m-%d') as date,open,high,low,close,volume FROM mystock.stock_bars_memory " \
+               "where date between '"+endday+"' and '"+ today +"' and code ='"+codestr+"'"
+    #print(stockSQL)
+    mysql = MySQL()
+    mysql.connect()
+    cnt,rows =mysql.select_sql(stockSQL,None)
+    columns = {'code':1, 'date':2, 'open':3, 'high':4, 'low':5, 'close':6, 'volume':7}
+    df=pd.DataFrame(rows,columns=columns)
     rows_list=[]
     row = 0
+
     for rowdata in df.iterrows():
         open_price = rowdata[1]['open']
         close_price = rowdata[1]['close']
         high_price = rowdata[1]['high']
         low_price = rowdata[1]['low']
         volume = rowdata[1]['volume']
-        end_date = rowdata[1]["date"].strftime('%Y-%m-%d') + " 15:00:00"
-        df_T = readdata(code, datetime.datetime.strptime(end_date, "%Y-%m-%d %H:%M:%S"), 30)
-        open_yesterday = df_T['close'][28]
-        close_yesterday = df_T['open'][28]
-        volume_yesterday = df_T['volume'][28]
-        T_sharp = check_t_jq(open_price, close_price, high_price, low_price, volume,open_yesterday,close_yesterday,volume_yesterday)
-        mean_volume = df_T['volume'][1:7].mean()
-        # 实体大小
-        rows_dict = {}
+        #end_date = rowdata[1]["date"].strftime('%Y-%m-%d') + " 15:00:00"
+        end_date = rowdata[1]["date"]
+        #df_T = readdata(code, end_date, 30)
+        if (row < 30):
+            row += 1
+        else :
+            df_T = df.loc[row-29:row]
+            open_yesterday = df_T['close'][row -1]
+            close_yesterday = df_T['open'][row -1]
+            volume_yesterday = df_T['volume'][row -1]
+            T_sharp = check_t_jq(open_price, close_price, high_price, low_price, volume,open_yesterday,close_yesterday,volume_yesterday)
+            mean_volume = df_T['volume'][row -5:row].mean()
+            # 实体大小
+            rows_dict = {}
+            row += 1
 
-        if  T_sharp and df_T['open'][29] < df_T['close'][28] and mean_volume*1.3 < volume:
-
-            # strs = rowdata[1]["date"].strftime('%Y-%m-%d') + ",low_price=" + str(low_price) + ",high_price" + str(high_price) + ",top_price" \
-            #        + str(top_price) + ",botton_price" + str(botton_price)
-            # print(strs)
-            rows_dict.update(rowdata[1])
-            rows_list.append(rows_dict)
+            if  T_sharp: #and df_T['open'][row] < df_T['close'][row-1] and mean_volume*1.3 < volume:
+                rows_dict.update(rowdata[1])
+                rows_list.append(rows_dict)
     if len(rows_list) != 0 :
         draw_k(df, rows_list)
     #draw_k(df, rows_list)
@@ -82,8 +114,9 @@ def check_t_jq(open,close,high,low,volume,open_yesterday,close_yesterday,volume_
 
     if (cylinder < cylinder_) and (cylinder > cylinder_*0.3) and ((high - top) < cylinder_*0.2): #上影线不超过预设实体大小的20%
         if botton - low > radio_low :
-            if botton_yesterday > open and volume > volume_yesterday: #今日低开且成交量放大
-                return True #找到
+            # if botton_yesterday > open and volume > volume_yesterday: #今日低开且成交量放大
+            #     return True #找到
+            return True  # 找到
     return False
 
 def get_maList(df:pd.DataFrame,n:int):
@@ -108,9 +141,9 @@ def draw_k(df:pd.DataFrame,mark):
         for row in  df.iterrows():
             flag = False
             for s in mark:
-                if row[1]["date"].strftime('%Y-%m-%d')=='2020-10-15':
-                    a=1
-                if s["date"].strftime('%Y-%m-%d') == row[1]["date"].strftime('%Y-%m-%d'):
+                # if row[1]["date"].strftime('%Y-%m-%d')=='2020-10-15':
+                #     a=1
+                if s["date"] == row[1]["date"]:
                     flag = True
                     break
             if flag :
@@ -127,40 +160,16 @@ def draw_k(df:pd.DataFrame,mark):
         #           figratio=(20, 10))
         # ('candle', 'candlestick', 'ohlc', 'ohlc_bars',
         #  'line', 'renko', 'pnf')
-        mpf.plot(data, type='candle', addplot=add_plot, volume=True )
+        #plt.savefig('fig.png', bbox_inches='tight')
+        mpf.plot(data, type='candle', addplot=add_plot, volume=True, ylabel='price', ylabel_lower='volume',)
     else:
         mpf.plot(data, type='candle', volume=True, mav=(7, 13, 26), show_nontrading=True,
                  datetime_format='%Y-%m-%d', figratio=(50, 30))
 
-    # add_plot = [
-    #     mpf.make_addplot(b_list, scatter=True, markersize=200, marker='^', color='y'),
-    #     mpf.make_addplot(s_list, scatter=True, markersize=200, marker='v', color='r'),
-    #     mpf.make_addplot(data[['UpperB', 'LowerB']])]
 
 getAuthJQ
 code = '000876.XSHE'
-today='2021-01-29 15:00:00'
-#df = check_stock(code,today)
-dataProcess(today,100)
-#draw_k(df)
-# df = df.rename(columns={"vol": "volume"})
-# df.set_index('date', inplace=True)
-# df.index.name = "Date"
-# df.index = pd.DatetimeIndex(df.index)
-# df.shape
-# mc = mpf.make_marketcolors(up='r',down='g')
-# s  = mpf.make_mpf_style(marketcolors=mc,mavcolors=['#4f8a8b','#fbd46d','#87556f'])
-# mpf.plot(df,type='candle',volume=True, show_nontrading=True, figratio=(20,10), mav=(5,10,15),style=s)
-# fig = plt.figure(figsize=(8, 6), dpi=72, facecolor="white")
-# axes = plt.subplot(111)
-# axes.set_title('Shangzheng')
-# axes.set_xlabel('time')
-# line, = axes.plot([], [], linewidth=1.5, linestyle='-')
-# plt.plot(range(df.shape[0]),(df['close']))
-# plt.plot(range(df.shape[0]),(df['high']))
-# plt.plot(range(df.shape[0]),(df['low']))
-# plt.xticks(range(0,df.shape[0],900),df['date'].loc[::900],rotation=45)
-# plt.xlabel('Date',fontsize=18)
-# plt.ylabel('Mid Price',fontsize=18)
+today='2021-02-01'
 
-#plt.show()
+dataProcess(today,300)
+

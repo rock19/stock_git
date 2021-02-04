@@ -32,7 +32,6 @@ class MysqlHelper:
                 db=self.db,
                 charset='utf8'
             )
-
             error_text = "成功"
             self.connected = True
         except Exception as e:

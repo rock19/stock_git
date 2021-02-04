@@ -41,7 +41,7 @@ def setJQDataToStockBars():
    mysql = MySQL()
    mysql.connect()
    stocks = getAllStocks()
-   today = '2021-02-01 15:00:00'
+   today = '2021-02-03 15:00:00'
    days = 600
    cnt = 0
    pbar = tqdm(total=len(stocks), ncols=100, unit='B')
@@ -68,7 +68,7 @@ def setJQDataToStockBars():
 
            insertSQL = "INSERT INTO `mystock`.`stock_bars`" \
                        "(`code`,`date`,`open`,`high`,`low`,`close`,`volume`)" \
-                       "VALUES('"+code+"','"+date+"',"+open+","+close+","+high+","+low+","+volume+");"
+                       "VALUES('"+code+"','"+date+"',"+open+","+high+","+low+","+close+","+volume+");"
            mysql.exec_sql(insertSQL)
    print("数据导入完成")
    return
