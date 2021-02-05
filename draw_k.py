@@ -14,7 +14,7 @@ def getAuthJQ():
 def readdata(code,today,days:int):
     s = datetime.datetime.strptime(today, '%Y-%m-%d').date() - datetime.timedelta(days=days)
     endday = s.strftime("%Y-%m-%d")
-    stockSQL = "SELECT code,date_format(date, '%Y-%m-%d') as date,open,high,low,close,volume FROM mystock.stock_bars_memory " \
+    stockSQL = "SELECT code,date,open,high,low,close,volume FROM mystock.stock_bars_memory " \
                "where date between '" + endday + "' and '" + today + "' and code ='" + code + "'"
     # print(stockSQL)
     mysql = MySQL()
@@ -53,7 +53,7 @@ def check_stock(codestr:str,today:str,days:int):
     #s = datetime.datetime.strptime(today,'%Y-%m-%d').date() - datetime.timedelta(days = days)
     s = datetime.datetime.strptime(today,'%Y-%m-%d').date() - datetime.timedelta(days = days)
     endday = s.strftime("%Y-%m-%d")
-    stockSQL = "SELECT code,date_format(date, '%Y-%m-%d') as date,open,high,low,close,volume FROM mystock.stock_bars_memory " \
+    stockSQL = "SELECT code,date,open,high,low,close,volume FROM mystock.stock_bars_memory " \
                "where date between '"+endday+"' and '"+ today +"' and code ='"+codestr+"'"
     #print(stockSQL)
     mysql = MySQL()
@@ -64,6 +64,7 @@ def check_stock(codestr:str,today:str,days:int):
     rows_list=[]
     row = 0
 
+    rows_dict = {}
     for rowdata in df.iterrows():
         open_price = rowdata[1]['open']
         close_price = rowdata[1]['close']
@@ -83,12 +84,10 @@ def check_stock(codestr:str,today:str,days:int):
             T_sharp = check_t_jq(open_price, close_price, high_price, low_price, volume,open_yesterday,close_yesterday,volume_yesterday)
             mean_volume = df_T['volume'][row -5:row].mean()
             # 实体大小
-            rows_dict = {}
-            row += 1
-
-            if  T_sharp: #and df_T['open'][row] < df_T['close'][row-1] and mean_volume*1.3 < volume:
+            if  T_sharp and df_T['open'][row] < df_T['close'][row-1] and mean_volume*1.3 < volume:
                 rows_dict.update(rowdata[1])
                 rows_list.append(rows_dict)
+            row += 1
     if len(rows_list) != 0 :
         draw_k(df, rows_list)
     #draw_k(df, rows_list)
@@ -124,9 +123,12 @@ def get_maList(df:pd.DataFrame,n:int):
     return mean
 
 def draw_k(df:pd.DataFrame,mark):
-    #df['date'] = str(df['date']).apply(lambda x: datetime.strptime(x, '%Y%m%d'))
+
+    #df['date'] = datetime.datetime.strptime(df['date'],'%Y-%m-%d').date()
+        #str(df['date']).apply(lambda x: datetime.strptime(x, '%Y%m%d'))
     data = df.loc[:, ['date', 'open', 'close', 'high', 'low', 'volume']]
-    data.set_index('date', inplace=True)
+    data.columns = ['Date', 'Open','Close','High','Low','Volume']
+    data.set_index('Date', inplace=True)
     data.index.name = "Date"
     data.index = pd.DatetimeIndex(data.index)
     data.shape
@@ -160,14 +162,15 @@ def draw_k(df:pd.DataFrame,mark):
         #           figratio=(20, 10))
         # ('candle', 'candlestick', 'ohlc', 'ohlc_bars',
         #  'line', 'renko', 'pnf')
-        #plt.savefig('fig.png', bbox_inches='tight')
-        mpf.plot(data, type='candle', addplot=add_plot, volume=True, ylabel='price', ylabel_lower='volume',)
+        plt.savefig('fig.png', bbox_inches='tight')
+        mpf.plot(data, type='candle', addplot=add_plot, volume=True,ylabel='price', ylabel_lower='volume')
     else:
         mpf.plot(data, type='candle', volume=True, mav=(7, 13, 26), show_nontrading=True,
                  datetime_format='%Y-%m-%d', figratio=(50, 30))
 
 
-getAuthJQ
+
+# getAuthJQ
 code = '000876.XSHE'
 today='2021-02-01'
 
